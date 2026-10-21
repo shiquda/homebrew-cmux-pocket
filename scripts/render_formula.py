@@ -30,6 +30,15 @@ class CmuxPocket < Formula
     system "cargo", "install", *std_cargo_args(path: "crates/cmux-pocket-cli")
   end
 
+  # Upgrading replaces the binary on disk while launchd keeps the previous
+  # Gateway process. Restart the registered agent so the new build serves the
+  # phone immediately instead of at the next login.
+  post_install_steps do
+    run "/bin/sh",
+        args:         ["-c", "launchctl kickstart -k gui/$(id -u)/com.cmuxpocket.gateway"],
+        must_succeed: false
+  end
+
   test do
     assert_match "cmux-pocket {version}", shell_output("#{{bin}}/cmux-pocket --version")
     output = shell_output("#{{bin}}/cmux-pocket doctor --offline --json")
