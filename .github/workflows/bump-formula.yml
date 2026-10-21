@@ -1,0 +1,124 @@
+name: Bump formula to the latest cmux-pocket release
+
+# shiquda/cmux-pocket tags `v*`; a tag published with its own GITHUB_TOKEN cannot
+# dispatch work here without a cross-repository PAT, so this repository watches
+# the release instead. Running every 30 minutes keeps the gap small without a
+# stored credential, and workflow_dispatch covers an immediate bump.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-formula
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Render the formula for the latest release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the tap
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Resolve the latest release tag and commit
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(gh release view --repo shiquda/cmux-pocket --json tagName --jq .tagName)
+          test -n "$tag"
+          # An annotated tag points at a tag object; dereference it to the commit.
+          tag_object=$(gh api "repos/shiquda/cmux-pocket/git/ref/tags/$tag")
+          object_type=$(printf '%s' "$tag_object" | jq -r .object.type)
+          revision=$(printf '%s' "$tag_object" | jq -r .object.sha)
+          if [ "$object_type" = "tag" ]; then
+            revision=$(gh api "repos/shiquda/cmux-pocket/git/tags/$revision" --jq .object.sha)
+          fi
+          case "$tag" in
+            v[0-9]*) ;;
+            *) echo "release tag '$tag' is not a version tag" >&2; exit 1 ;;
+          esac
+          version=${tag#v}
+          printf 'tag=%s\nversion=%s\nrevision=%s\n' "$tag" "$version" "$revision" >> "$GITHUB_OUTPUT"
+          printf 'released %s at %s\n' "$tag" "$revision"
+
+      - name: Check the tagged source declares the same version
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://raw.githubusercontent.com/shiquda/cmux-pocket/${TAG}/Cargo.toml" -o "$RUNNER_TEMP/Cargo.toml"
+          declared=$(python3 - "$RUNNER_TEMP/Cargo.toml" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+          match = re.search(r'^\[workspace\.package\][^\[]*?^version\s*=\s*"([^"]+)"', text, re.M | re.S)
+          if match is None:
+              raise SystemExit("Cargo.toml has no [workspace.package] version")
+          print(match.group(1))
+          PY
+          )
+          if [ "$declared" != "$VERSION" ]; then
+            echo "tag ${TAG} declares Cargo workspace version ${declared}." >&2
+            echo "Bump the workspace version before tagging; refusing to publish a mislabelled formula." >&2
+            exit 1
+          fi
+
+      - name: Skip downgrades and unchanged releases
+        id: compare
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          current=$(sed -n 's/^  version "\(.*\)"$/\1/p' Formula/cmux-pocket.rb)
+          if [ -z "$current" ]; then
+            echo "Formula/cmux-pocket.rb has no version line" >&2
+            exit 1
+          fi
+          newest=$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -1)
+          if [ "$newest" != "$VERSION" ] || [ "$newest" = "$current" ]; then
+            echo "formula is already at ${current}; latest release is ${VERSION}" >> "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Render the formula
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          REVISION: ${{ steps.release.outputs.revision }}
+        run: python3 scripts/render_formula.py "$VERSION" "$TAG" "$REVISION"
+
+      - name: Validate the rendered formula
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          ruby -c Formula/cmux-pocket.rb
+          brew style Formula/cmux-pocket.rb
+
+      - name: Commit and push
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          REVISION: ${{ steps.release.outputs.revision }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Formula/cmux-pocket.rb; then
+            echo "formula already matches ${VERSION} at ${REVISION}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/cmux-pocket.rb
+          git commit -m "cmux-pocket ${VERSION}"
+          git push
