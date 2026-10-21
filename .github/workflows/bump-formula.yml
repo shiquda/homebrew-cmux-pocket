@@ -104,7 +104,6 @@ jobs:
         run: |
           set -euo pipefail
           ruby -c Formula/cmux-pocket.rb
-          brew style Formula/cmux-pocket.rb
 
       - name: Commit and push
         if: steps.compare.outputs.changed == 'true'
