@@ -2,9 +2,9 @@ class CmuxPocket < Formula
   desc "Rust Gateway and macOS service manager for cmux Pocket"
   homepage "https://github.com/shiquda/cmux-pocket"
   url "https://github.com/shiquda/cmux-pocket.git",
-      tag:      "v0.2.0",
-      revision: "97226dd2c7a2f9fb9ac1792c758798c3dcf8ed60"
-  version "0.2.0"
+      tag:      "v0.3.0",
+      revision: "7a8c01ba367528ccd25197353994ff8f5c41d1cd"
+  version "0.3.0"
   license "AGPL-3.0-or-later"
 
   depends_on "rust" => :build
@@ -23,7 +23,7 @@ class CmuxPocket < Formula
   end
 
   test do
-    assert_match "cmux-pocket 0.2.0", shell_output("#{bin}/cmux-pocket --version")
+    assert_match "cmux-pocket 0.3.0", shell_output("#{bin}/cmux-pocket --version")
     output = shell_output("#{bin}/cmux-pocket doctor --offline --json")
     assert_match '"ok": true', output
     assert_match '"code": 0', output
