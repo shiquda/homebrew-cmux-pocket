@@ -2,11 +2,13 @@ name: Bump formula to the latest cmux-pocket release
 
 # shiquda/cmux-pocket tags `v*`; a tag published with its own GITHUB_TOKEN cannot
 # dispatch work here without a cross-repository PAT, so this repository watches
-# the release instead. Running every 30 minutes keeps the gap small without a
-# stored credential, and workflow_dispatch covers an immediate bump.
+# the release instead. A 30-minute poll left a new release stuck on the previous
+# version long enough that `brew upgrade` reported "already installed", so the
+# cadence is the shortest one GitHub honours (5 minutes); each run is a no-op
+# until the release tag changes. workflow_dispatch covers an immediate bump.
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
