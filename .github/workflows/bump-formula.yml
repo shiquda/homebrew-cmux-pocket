@@ -6,6 +6,14 @@ name: Bump formula to the latest cmux-pocket release
 # version long enough that `brew upgrade` reported "already installed", so the
 # cadence is the shortest one GitHub honours (5 minutes); each run is a no-op
 # until the release tag changes. workflow_dispatch covers an immediate bump.
+#
+# Equal versions are skipped on purpose. That leaves the current source formula
+# in place until a newer release, and it also leaves a manual same-version
+# rollback in place. A newer release renders prebuilt archives only when both
+# macOS tarballs exist; a missing archive is a no-op, not a formula update.
+# `render_formula.py source` is the manual rollback printer. This workflow never
+# calls it. Restoring source builds for future releases also requires reverting
+# the renderer, because the next newer tag would otherwise become a binary formula.
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -93,22 +101,59 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Render the formula
+      - name: Require both macOS release archives
+        id: assets
         if: steps.compare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo shiquda/cmux-pocket --json assets > "$RUNNER_TEMP/assets.json"
+          set +e
+          python3 scripts/render_formula.py check-archives "$TAG" "$RUNNER_TEMP/assets.json"
+          status=$?
+          set -e
+          if [ "$status" -eq 2 ]; then
+            echo "latest release ${TAG} is missing a macOS archive; formula left unchanged" >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          mkdir -p "$RUNNER_TEMP/archives"
+          for name in \
+            "cmux-pocket-${TAG}-aarch64-apple-darwin.tar.gz" \
+            "cmux-pocket-${TAG}-x86_64-apple-darwin.tar.gz"
+          do
+            gh release download "$TAG" \
+              --repo shiquda/cmux-pocket \
+              --pattern "$name" \
+              --dir "$RUNNER_TEMP/archives" \
+              --clobber
+            test -s "$RUNNER_TEMP/archives/$name"
+          done
+          python3 scripts/render_formula.py checksums "$TAG" "$RUNNER_TEMP/assets.json" "$RUNNER_TEMP/archives" >> "$GITHUB_OUTPUT"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Render the formula
+        if: steps.compare.outputs.changed == 'true' && steps.assets.outputs.ready == 'true'
         env:
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
-          REVISION: ${{ steps.release.outputs.revision }}
-        run: python3 scripts/render_formula.py "$VERSION" "$TAG" "$REVISION"
+          ARM_SHA256: ${{ steps.assets.outputs.arm_sha256 }}
+          INTEL_SHA256: ${{ steps.assets.outputs.intel_sha256 }}
+        run: python3 scripts/render_formula.py binary "$VERSION" "$TAG" "$ARM_SHA256" "$INTEL_SHA256"
 
       - name: Validate the rendered formula
-        if: steps.compare.outputs.changed == 'true'
+        if: steps.compare.outputs.changed == 'true' && steps.assets.outputs.ready == 'true'
         run: |
           set -euo pipefail
           ruby -c Formula/cmux-pocket.rb
 
       - name: Commit and push
-        if: steps.compare.outputs.changed == 'true'
+        if: steps.compare.outputs.changed == 'true' && steps.assets.outputs.ready == 'true'
         env:
           VERSION: ${{ steps.release.outputs.version }}
           REVISION: ${{ steps.release.outputs.revision }}
