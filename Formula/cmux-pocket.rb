@@ -1,7 +1,7 @@
 class CmuxPocket < Formula
   desc "Rust Gateway and macOS service manager for cmux Pocket"
   homepage "https://github.com/shiquda/cmux-pocket"
-  version "0.4.0"
+  version "0.4.1"
   license "AGPL-3.0-or-later"
 
   # Mach-O minos is 11.0, so older than Big Sur cannot load the binary.
@@ -9,12 +9,12 @@ class CmuxPocket < Formula
   # current macOS runners. The archive is a single cmux-pocket file.
   on_macos do
     on_arm do
-      url "https://github.com/shiquda/cmux-pocket/releases/download/v0.4.0/cmux-pocket-v0.4.0-aarch64-apple-darwin.tar.gz"
-      sha256 "d244c8bb3fc62929f3578c9e4089374a17e3feeff3a9dd5150b4e9d1bc04e8e4"
+      url "https://github.com/shiquda/cmux-pocket/releases/download/v0.4.1/cmux-pocket-v0.4.1-aarch64-apple-darwin.tar.gz"
+      sha256 "5a78731bea45a82b5c50ad6f9920f45e5fc5af347fb4765d9b5478170003065c"
     end
     on_intel do
-      url "https://github.com/shiquda/cmux-pocket/releases/download/v0.4.0/cmux-pocket-v0.4.0-x86_64-apple-darwin.tar.gz"
-      sha256 "3d3eea50567401638fe690403b97fa2f37083e2249704611de8be09cf7cc981c"
+      url "https://github.com/shiquda/cmux-pocket/releases/download/v0.4.1/cmux-pocket-v0.4.1-x86_64-apple-darwin.tar.gz"
+      sha256 "3f38c1e4727e3e99939ce3a247e696ba752c316a8c4b8322d0c07a9adaf76775"
     end
   end
 
@@ -34,7 +34,7 @@ class CmuxPocket < Formula
   end
 
   test do
-    assert_match "cmux-pocket 0.4.0", shell_output("#{bin}/cmux-pocket --version")
+    assert_match "cmux-pocket 0.4.1", shell_output("#{bin}/cmux-pocket --version")
     output = shell_output("#{bin}/cmux-pocket doctor --offline --json")
     assert_match '"ok": true', output
     assert_match '"code": 0', output
